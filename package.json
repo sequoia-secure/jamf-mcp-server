@@ -68,7 +68,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1038.0",
     "@jest/reporters": "^29.7.0",
     "@jridgewell/set-array": "^1.2.1",
     "@types/compression": "^1.7.5",
