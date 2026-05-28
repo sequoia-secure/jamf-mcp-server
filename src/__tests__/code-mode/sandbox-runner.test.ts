@@ -337,6 +337,33 @@ describe('SandboxRunner', () => {
       expect(result.returnValue).toBe('undefined');
     });
 
+    // Regression tests for the JMF-001 sandbox escape (vm.runInContext was
+    // escapable via constructor-chain to the outer Function constructor;
+    // isolated-vm runs in a separate V8 isolate so these MUST fail).
+    it.each([
+      ['Object.constructor escape', `const F = Object.constructor; const p = F('return process')(); return typeof p;`],
+      ['Array.constructor escape',  `const F = Array.constructor;  const p = F('return process')(); return typeof p;`],
+      ['Function literal constructor escape', `const F = (function(){}).constructor; const p = F('return process')(); return typeof p;`],
+      ['Promise.constructor escape', `const F = Promise.constructor; const p = F('return process')(); return typeof p;`],
+    ])('blocks sandbox escape: %s', async (_label, escapeCode) => {
+      const client = createMockClient();
+      const result = await execute(client, {
+        code: escapeCode,
+        mode: 'plan',
+        capabilities: [],
+      });
+      // Either the escape throws (process not defined in the isolate realm)
+      // or it returns 'undefined'. Both are acceptable — what's NOT acceptable
+      // is success: true + returnValue === 'object' (would mean we got process).
+      if (result.success) {
+        expect(result.returnValue).not.toBe('object');
+      } else {
+        expect(result.logs.some(l => l.msg.some(m =>
+          typeof m === 'string' && m.includes('process is not defined'),
+        ))).toBe(true);
+      }
+    });
+
     it('exposes standard builtins', async () => {
       const client = createMockClient();
       const result = await execute(client, {
