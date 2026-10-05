@@ -407,7 +407,9 @@ npm test             # Run tests
 
 - **Read-Only Mode**: Set `JAMF_READ_ONLY=true` to prevent any modifications
 - **Confirmation Required**: All destructive operations require explicit `confirm: true`
-- **Tool Annotations**: Each tool declares `readOnlyHint` and `destructiveHint` for client-side safety
+- **Tool Annotations**: Each tool declares `readOnlyHint` and `destructiveHint` for client-side safety (enforced by a test). `getLocalAdminPassword` is not read-only: it returns a live credential
+- **LAPS Audit Redaction**: `getLocalAdminPasswordAudit` returns who viewed a password and when, but replaces the historical passwords Jamf includes in that response
+- **Skill Tools Opt-Out**: Set `JAMF_DISABLE_SKILL_TOOLS=true` to omit the unannotated `skill_*` tools, e.g. behind a gateway that authorizes tool by tool
 - **Client Credentials Authentication**: Supports Jamf Pro API roles and clients
 - **Concurrency Limiting**: Prevents 429 rate-limit errors (default 5 concurrent, configurable via `JAMF_MAX_CONCURRENCY`)
 - **Code Mode Sandbox**: `node:vm` isolation — no `require`, `import`, `fetch`, `fs`, or `process` access
