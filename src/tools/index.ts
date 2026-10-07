@@ -748,7 +748,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       // ==========================================
       {
         name: 'searchDevices',
-        description: 'Search for computers in Jamf Pro by name, serial number, IP address, username, or other criteria. For full details on a result, follow up with getDeviceDetails or getDeviceFullProfile. For batch details, use getDevicesBatch.',
+        description: 'Search for computers in Jamf Pro by computer name or by the assigned user\'s username, email address or full name. Each result includes the assigned user. For full details on a result, follow up with getDeviceDetails or getDeviceFullProfile. For batch details, use getDevicesBatch.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -3070,6 +3070,8 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
             ipAddress: d.ipAddress || d.ip_address || d.reported_ip_address,
             username: d.username,
             email: d.email || d.email_address,
+            realName: d.realName || d.realname,
+            model: d.modelIdentifier || d.model_identifier,
           }));
 
           const rawResult = {
