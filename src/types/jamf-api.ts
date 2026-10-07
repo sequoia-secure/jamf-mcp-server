@@ -23,6 +23,11 @@ export interface JamfComputer {
   asset_tag?: string; // Classic API
   modelIdentifier?: string;
   model_identifier?: string; // Classic API
+  // Assigned user. Returned by Classic /computers/match, not by /computers.
+  username?: string;
+  realname?: string;
+  email?: string;
+  email_address?: string;
 }
 
 export interface JamfComputerDetails extends JamfComputer {

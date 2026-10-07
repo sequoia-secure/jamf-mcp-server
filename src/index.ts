@@ -22,6 +22,10 @@ const JAMF_CLIENT_SECRET = process.env.JAMF_CLIENT_SECRET;
 const JAMF_USERNAME = process.env.JAMF_USERNAME;
 const JAMF_PASSWORD = process.env.JAMF_PASSWORD;
 const READ_ONLY_MODE = process.env.JAMF_READ_ONLY === 'true';
+// Skill tools (skill_*) carry no MCP annotations and bundle several API calls,
+// some of them writes, behind one name. A gateway that authorizes tool by tool
+// cannot classify them, so it can switch them off.
+const SKILL_TOOLS_ENABLED = process.env.JAMF_DISABLE_SKILL_TOOLS !== 'true';
 
 // Validate configuration
 if (!JAMF_URL) {
@@ -99,7 +103,7 @@ async function run() {
       logger.info(`  ✅ Basic Auth (Bearer Token) - Username: ${JAMF_USERNAME}`);
     }
     logger.info(`Read-only mode: ${READ_ONLY_MODE}`);
-    logger.info('Skills integration: ✅ Enabled');
+    logger.info(`Skill tools: ${SKILL_TOOLS_ENABLED ? '✅ Enabled' : 'Disabled (JAMF_DISABLE_SKILL_TOOLS)'}`);
 
     // Initialize the hybrid client
     const jamfClient = new JamfApiClientHybrid({
@@ -119,7 +123,9 @@ async function run() {
     registerPrompts(server);
     
     // Register skills as MCP tools
-    registerSkillsAsMCPTools(server, skillsManager, jamfClient);
+    if (SKILL_TOOLS_ENABLED) {
+      registerSkillsAsMCPTools(server, skillsManager, jamfClient);
+    }
 
     // Start the server
     const transport = new StdioServerTransport();

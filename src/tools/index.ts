@@ -650,6 +650,21 @@ const GetWebhookDetailsSchema = z.object({
   webhookId: z.string().describe('The webhook ID'),
 });
 
+/**
+ * Replace every `password` value in a LAPS audit response, however deeply
+ * nested. Jamf's /v2/local-admin-password/.../audit returns
+ * `results[].password` next to the audit events; matching the key anywhere
+ * rather than at that one path keeps a schema change from reopening it.
+ */
+export function redactLapsPasswords(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactLapsPasswords);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) =>
+      [key, key.toLowerCase() === 'password' ? '[REDACTED]' : redactLapsPasswords(inner)]),
+  );
+}
+
 export function registerTools(server: Server, jamfClient: IJamfApiClient): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools: Tool[] = [
@@ -733,7 +748,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       // ==========================================
       {
         name: 'searchDevices',
-        description: 'Search for computers in Jamf Pro by name, serial number, IP address, username, or other criteria. For full details on a result, follow up with getDeviceDetails or getDeviceFullProfile. For batch details, use getDevicesBatch.',
+        description: 'Search for computers in Jamf Pro by computer name or by the assigned user\'s username, email address or full name. Each result includes the assigned user. For full details on a result, follow up with getDeviceDetails or getDeviceFullProfile. For batch details, use getDevicesBatch.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -783,7 +798,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       },
       {
         name: 'checkDeviceCompliance',
-        description: 'Check which devices have not reported within a specified number of days. Use this FIRST for fleet overview questions. For security-focused analysis, use getSecurityPosture instead.',
+        description: 'Find devices that have not checked in within a specified number of days (stale or missing devices). For a general fleet summary use getFleetOverview; for encryption and OS currency use getSecurityPosture.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -2044,7 +2059,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       // Reporting and Analytics Tools
       {
         name: 'getInventorySummary',
-        description: 'Get inventory summary report including total devices, OS version distribution, and model distribution',
+        description: 'Get an inventory breakdown: total devices, OS version distribution, and model distribution. For an overall fleet health summary use getFleetOverview.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -2317,7 +2332,9 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
           },
           required: ['clientManagementId', 'username'],
         },
-        annotations: { readOnlyHint: true, destructiveHint: false },
+        // Not read-only: it hands out a live local admin credential. Gateways
+        // that sort tools by readOnlyHint must not put this in a read tier.
+        annotations: { readOnlyHint: false, destructiveHint: false },
       },
       {
         name: 'getLocalAdminPasswordAudit',
@@ -3053,6 +3070,8 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
             ipAddress: d.ipAddress || d.ip_address || d.reported_ip_address,
             username: d.username,
             email: d.email || d.email_address,
+            realName: d.realName || d.realname,
+            model: d.modelIdentifier || d.model_identifier,
           }));
 
           const rawResult = {
@@ -4779,9 +4798,12 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
           const { clientManagementId, username } = GetLocalAdminPasswordAuditSchema.parse(args);
           const audit = await jamfClient.getLocalAdminPasswordAudit(clientManagementId, username);
 
+          // Jamf returns each historical password alongside its audit events,
+          // which would make this tool a second, unconfirmed and unannotated way
+          // to read a LAPS credential. Only getLocalAdminPassword may do that.
           const content: TextContent = {
             type: 'text',
-            text: JSON.stringify(audit, null, 2),
+            text: JSON.stringify(redactLapsPasswords(audit), null, 2),
           };
 
           return { content: [content] };

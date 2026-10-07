@@ -48,9 +48,35 @@ const ComputerSchema = z.object({
   macAddress: z.string().optional(),
   assetTag: z.string().optional(),
   modelIdentifier: z.string().optional(),
+  // The assigned user, from the inventory's User and Location section.
+  username: z.string().optional(),
+  email: z.string().optional(),
+  realName: z.string().optional(),
 });
 
 export type Computer = z.infer<typeof ComputerSchema>;
+
+/**
+ * RSQL filter for a computer search on the Jamf Pro API: a substring match on
+ * the computer name or its assigned user's username, email or real name, so a
+ * device can be found from the person as well as the hostname.
+ *
+ * The query is a caller-supplied string inside a double-quoted RSQL value, so
+ * backslashes and quotes are escaped; unescaped, a `"` would end the value and
+ * let the rest of the query rewrite the filter.
+ */
+export function buildComputerSearchFilter(query: string): string {
+  const value = query.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return ['general.name', 'userAndLocation.username', 'userAndLocation.email', 'userAndLocation.realname']
+    .map(field => `${field}=="*${value}*"`)
+    .join(' or ');
+}
+
+/**
+ * Inventory sections a computer search requests. The API returns only GENERAL
+ * by default, which left the OS version, model and assigned user empty.
+ */
+export const COMPUTER_SEARCH_SECTIONS = ['GENERAL', 'USER_AND_LOCATION', 'HARDWARE', 'OPERATING_SYSTEM'];
 
 /**
  * Hybrid Jamf API Client that uses the correct authentication methods:
@@ -414,6 +440,9 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       macAddress: classicComputer.mac_address,
       assetTag: classicComputer.asset_tag,
       modelIdentifier: classicComputer.model_identifier,
+      username: classicComputer.username || undefined,
+      email: classicComputer.email || classicComputer.email_address || undefined,
+      realName: classicComputer.realname || undefined,
     };
   }
 
@@ -464,20 +493,18 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info('Searching computers using Jamf Pro API...');
-      const params: Record<string, string | number> = {
-        'page-size': limit,
-      };
-      
-      // Only add filter if there's a query
+      // URLSearchParams rather than an object: `section` repeats, and axios
+      // would otherwise serialize an array as `section[]=`.
+      const params = new URLSearchParams({ 'page-size': String(limit) });
+      for (const section of COMPUTER_SEARCH_SECTIONS) params.append('section', section);
       if (query && query.trim() !== '') {
-        // Try simpler filter syntax
-        params.filter = `general.name=="*${query}*"`;
+        params.set('filter', buildComputerSearchFilter(query));
       }
-      
+
       const response = await this.axiosInstance.get('/api/v1/computers-inventory', {
         params,
       });
-      
+
       // Transform modern response
       return response.data.results.map((computer: any) => ({
         id: computer.id,
@@ -491,6 +518,9 @@ export class JamfApiClientHybrid implements IJamfApiClient {
         macAddress: computer.general?.macAddress,
         assetTag: computer.general?.assetTag,
         modelIdentifier: computer.hardware?.modelIdentifier,
+        username: computer.userAndLocation?.username || undefined,
+        email: computer.userAndLocation?.email || undefined,
+        realName: computer.userAndLocation?.realname || undefined,
       }));
     } catch (error) {
       const axiosError = error as AxiosError;
