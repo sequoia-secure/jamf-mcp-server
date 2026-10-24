@@ -10,6 +10,7 @@ import { xmlDocument, escapeXml } from './utils/xml-builder.js';
 import { retryWithBackoff, getRetryConfig } from './utils/retry.js';
 import { ConcurrencyLimiter } from './utils/throttle.js';
 import { IJamfApiClient } from './types/jamf-client.js';
+import { pathSegment, assertSafeRequestPath } from './utils/url-path.js';
 
 const logger = createLogger('jamf-client-hybrid');
 const agentPool = getDefaultAgentPool();
@@ -135,6 +136,9 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     
     // Add request interceptor to handle auth based on endpoint
     this.axiosInstance.interceptors.request.use((config) => {
+      // Fail closed before attaching credentials if a caller-supplied value
+      // re-routed the path (see utils/url-path.ts).
+      assertSafeRequestPath(config.url);
       if (config.url?.includes('/JSSResource/')) {
         // Classic API: prefer OAuth2/Bearer over Basic Auth
         // (Basic Auth may be rejected while valid OAuth2 tokens work fine)
@@ -538,7 +542,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info('Searching computers using Classic API...');
       if (query) {
-        const response = await this.axiosInstance.get(`/JSSResource/computers/match/*${query}*`);
+        const response = await this.axiosInstance.get(`/JSSResource/computers/match/*${pathSegment(query)}*`);
         const computers = response.data.computers || [];
         return computers.slice(0, limit).map((c: any) => this.transformClassicComputer(c));
       } else {
@@ -561,7 +565,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
   private async searchComputersViaAdvancedSearch(query: string, limit: number): Promise<Computer[]> {
     const searchId = await this.findBestAdvancedSearch();
     
-    const response = await this.axiosInstance.get(`/JSSResource/advancedcomputersearches/id/${searchId}`);
+    const response = await this.axiosInstance.get(`/JSSResource/advancedcomputersearches/id/${pathSegment(searchId)}`);
     const allComputers = response.data.advanced_computer_search?.computers || [];
     
     let filteredComputers = allComputers;
@@ -635,7 +639,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info(`Getting computer details for ${id} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/computers-inventory-detail/${id}`);
+      const response = await this.axiosInstance.get(`/api/v1/computers-inventory-detail/${pathSegment(id)}`);
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -650,7 +654,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Classic API
     logger.info(`Getting computer details for ${id} using Classic API...`);
     try {
-      const response = await this.axiosInstance.get(`/JSSResource/computers/id/${id}`);
+      const response = await this.axiosInstance.get(`/JSSResource/computers/id/${pathSegment(id)}`);
       return response.data.computer;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -709,7 +713,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     await this.ensureAuthenticated();
     
     for (const deviceId of deviceIds) {
-      await this.axiosInstance.post(`/api/v1/policies/${policyId}/retry/${deviceId}`);
+      await this.axiosInstance.post(`/api/v1/policies/${pathSegment(policyId)}/retry/${pathSegment(deviceId)}`);
     }
   }
 
@@ -726,7 +730,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     await this.ensureAuthenticated();
     
     for (const deviceId of deviceIds) {
-      await this.axiosInstance.post(`/api/v1/scripts/${scriptId}/run`, {
+      await this.axiosInstance.post(`/api/v1/scripts/${pathSegment(scriptId)}/run`, {
         computerIds: [deviceId],
       });
     }
@@ -745,7 +749,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       // Jamf Pro API uses management commands endpoint
-      await this.axiosInstance.post(`/api/v1/jamf-management-framework/redeploy/${deviceId}`);
+      await this.axiosInstance.post(`/api/v1/jamf-management-framework/redeploy/${pathSegment(deviceId)}`);
       logger.info(`Inventory update requested for device ${deviceId} via Jamf Pro API`);
     } catch (error) {
       if (getAxiosErrorStatus(error) === 404 || getAxiosErrorStatus(error) === 403) {
@@ -814,7 +818,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     return this.cachedGet(`policyDetails:${policyId}`, async () => {
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/policies/id/${policyId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/policies/id/${pathSegment(policyId)}`);
         return response.data.policy;
       } catch (error) {
         if (isAxiosError(error)) {
@@ -903,7 +907,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info(`Updating policy ${policyId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.put(`/api/v1/policies/${policyId}`, policyData);
+      const response = await this.axiosInstance.put(`/api/v1/policies/${pathSegment(policyId)}`, policyData);
       return response.data;
     } catch (error) {
       logger.debug(`Jamf Pro API failed with status ${getAxiosErrorStatus(error)}, trying Classic API...`);
@@ -919,7 +923,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       const xmlPayload = this.buildPolicyXml(policyData);
       
       await this.axiosInstance.put(
-        `/JSSResource/policies/id/${policyId}`,
+        `/JSSResource/policies/id/${pathSegment(policyId)}`,
         xmlPayload,
         {
           headers: {
@@ -1096,7 +1100,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Deleting policy ${policyId} using Classic API...`);
-      await this.axiosInstance.delete(`/JSSResource/policies/id/${policyId}`);
+      await this.axiosInstance.delete(`/JSSResource/policies/id/${pathSegment(policyId)}`);
       logger.info(`Successfully deleted policy ${policyId}`);
     } catch (error) {
       if (isAxiosError(error)) {
@@ -1219,7 +1223,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info(`Getting script details for ${scriptId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/scripts/${scriptId}`);
+      const response = await this.axiosInstance.get(`/api/v1/scripts/${pathSegment(scriptId)}`);
       return response.data;
     } catch (error) {
       logger.debug(`Jamf Pro API failed with status ${getAxiosErrorStatus(error)}, trying Classic API...`);
@@ -1229,7 +1233,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Classic API
     try {
       logger.info(`Getting script details for ${scriptId} using Classic API...`);
-      const response = await this.axiosInstance.get(`/JSSResource/scripts/id/${scriptId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/scripts/id/${pathSegment(scriptId)}`);
       const script = response.data.script;
       
       // Transform Classic API response to a consistent format
@@ -1323,8 +1327,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       // Try Jamf Pro API first
       logger.info(`Getting ${type} configuration profile ${profileId} using Jamf Pro API...`);
       const endpoint = type === 'computer'
-        ? `/api/v2/computer-configuration-profiles/${profileId}`
-        : `/api/v2/mobile-device-configuration-profiles/${profileId}`;
+        ? `/api/v2/computer-configuration-profiles/${pathSegment(profileId)}`
+        : `/api/v2/mobile-device-configuration-profiles/${pathSegment(profileId)}`;
       
       const response = await this.axiosInstance.get(endpoint);
       return response.data;
@@ -1334,8 +1338,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       // Fall back to Classic API
       try {
         const endpoint = type === 'computer'
-          ? `/JSSResource/osxconfigurationprofiles/id/${profileId}`
-          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${profileId}`;
+          ? `/JSSResource/osxconfigurationprofiles/id/${pathSegment(profileId)}`
+          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${pathSegment(profileId)}`;
         
         const response = await this.axiosInstance.get(endpoint);
         
@@ -1400,8 +1404,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       logger.info(`Deploying ${type} configuration profile ${profileId} using Jamf Pro API...`);
       
       const endpoint = type === 'computer'
-        ? `/api/v2/computer-configuration-profiles/${profileId}`
-        : `/api/v2/mobile-device-configuration-profiles/${profileId}`;
+        ? `/api/v2/computer-configuration-profiles/${pathSegment(profileId)}`
+        : `/api/v2/mobile-device-configuration-profiles/${pathSegment(profileId)}`;
       
       // Add devices to the profile scope
       const currentScope = profile.scope || {};
@@ -1427,8 +1431,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       // Fall back to Classic API
       try {
         const endpoint = type === 'computer'
-          ? `/JSSResource/osxconfigurationprofiles/id/${profileId}`
-          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${profileId}`;
+          ? `/JSSResource/osxconfigurationprofiles/id/${pathSegment(profileId)}`
+          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${pathSegment(profileId)}`;
         
         // For Classic API, we need to update the scope XML
         const scopeKey = type === 'computer' ? 'computers' : 'mobile_devices';
@@ -1481,8 +1485,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       logger.info(`Removing ${type} configuration profile ${profileId} using Jamf Pro API...`);
       
       const endpoint = type === 'computer'
-        ? `/api/v2/computer-configuration-profiles/${profileId}`
-        : `/api/v2/mobile-device-configuration-profiles/${profileId}`;
+        ? `/api/v2/computer-configuration-profiles/${pathSegment(profileId)}`
+        : `/api/v2/mobile-device-configuration-profiles/${pathSegment(profileId)}`;
       
       // Remove devices from the profile scope
       const currentScope = profile.scope || {};
@@ -1508,8 +1512,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       // Fall back to Classic API
       try {
         const endpoint = type === 'computer'
-          ? `/JSSResource/osxconfigurationprofiles/id/${profileId}`
-          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${profileId}`;
+          ? `/JSSResource/osxconfigurationprofiles/id/${pathSegment(profileId)}`
+          : `/JSSResource/mobiledeviceconfigurationprofiles/id/${pathSegment(profileId)}`;
         
         // For Classic API, we need to update the scope XML
         const scopeKey = type === 'computer' ? 'computers' : 'mobile_devices';
@@ -1553,8 +1557,8 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Deleting ${type} configuration profile ${profileId} using Classic API...`);
       const endpoint = type === 'computer'
-        ? `/JSSResource/osxconfigurationprofiles/id/${profileId}`
-        : `/JSSResource/mobiledeviceconfigurationprofiles/id/${profileId}`;
+        ? `/JSSResource/osxconfigurationprofiles/id/${pathSegment(profileId)}`
+        : `/JSSResource/mobiledeviceconfigurationprofiles/id/${pathSegment(profileId)}`;
       await this.axiosInstance.delete(endpoint);
       logger.info(`Successfully deleted ${type} configuration profile ${profileId}`);
     } catch (error) {
@@ -1597,7 +1601,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Packages are only available through Classic API
     try {
       logger.info(`Getting package details for ${packageId} using Classic API...`);
-      const response = await this.axiosInstance.get(`/JSSResource/packages/id/${packageId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/packages/id/${pathSegment(packageId)}`);
       return response.data.package;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -1773,7 +1777,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Computer groups are only available through Classic API
     try {
       logger.info(`Getting computer group ${groupId} details using Classic API...`);
-      const response = await this.axiosInstance.get(`/JSSResource/computergroups/id/${groupId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/computergroups/id/${pathSegment(groupId)}`);
       const group = response.data.computer_group;
       
       // Transform Classic API response to include member count
@@ -1893,7 +1897,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       const xmlPayload = this.buildComputerGroupXml(groupDetails.name, computerIds);
 
       await this.axiosInstance.put(
-        `/JSSResource/computergroups/id/${groupId}`,
+        `/JSSResource/computergroups/id/${pathSegment(groupId)}`,
         xmlPayload,
         {
           headers: {
@@ -1931,14 +1935,14 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       // Try Jamf Pro API first
       logger.info(`Deleting computer group ${groupId} using Jamf Pro API...`);
-      await this.axiosInstance.delete(`/api/v1/computer-groups/${groupId}`);
+      await this.axiosInstance.delete(`/api/v1/computer-groups/${pathSegment(groupId)}`);
       logger.info(`Successfully deleted computer group ${groupId}`);
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
       
       // Fall back to Classic API
       try {
-        await this.axiosInstance.delete(`/JSSResource/computergroups/id/${groupId}`);
+        await this.axiosInstance.delete(`/JSSResource/computergroups/id/${pathSegment(groupId)}`);
         logger.info(`Successfully deleted computer group ${groupId} via Classic API`);
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -1975,7 +1979,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info('Searching mobile devices using Classic API...');
       if (query) {
-        const response = await this.axiosInstance.get(`/JSSResource/mobiledevices/match/*${query}*`);
+        const response = await this.axiosInstance.get(`/JSSResource/mobiledevices/match/*${pathSegment(query)}*`);
         const devices = response.data.mobile_devices || [];
         return devices.slice(0, limit);
       } else {
@@ -2001,7 +2005,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info(`Getting mobile device details for ${deviceId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v2/mobile-devices/${deviceId}/detail`);
+      const response = await this.axiosInstance.get(`/api/v2/mobile-devices/${pathSegment(deviceId)}/detail`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
@@ -2010,7 +2014,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Classic API
     try {
       logger.info(`Getting mobile device details for ${deviceId} using Classic API...`);
-      const response = await this.axiosInstance.get(`/JSSResource/mobiledevices/id/${deviceId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/mobiledevices/id/${pathSegment(deviceId)}`);
       return response.data.mobile_device;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -2041,7 +2045,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     // Try Jamf Pro API first
     try {
       logger.info(`Updating mobile device inventory for ${deviceId} using Jamf Pro API...`);
-      await this.axiosInstance.post(`/api/v2/mobile-devices/${deviceId}/update-inventory`);
+      await this.axiosInstance.post(`/api/v2/mobile-devices/${pathSegment(deviceId)}/update-inventory`);
       logger.info(`Mobile device inventory update requested for device ${deviceId}`);
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
@@ -2062,7 +2066,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 </mobile_device_command>`;
         
         await this.axiosInstance.post(
-          `/JSSResource/mobiledevicecommands/command/UpdateInventory/id/${deviceId}`,
+          `/JSSResource/mobiledevicecommands/command/UpdateInventory/id/${pathSegment(deviceId)}`,
           xmlPayload,
           {
             headers: {
@@ -2126,14 +2130,14 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       
       // Jamf Pro API uses different endpoints for different commands
       if (command === 'DeviceLock') {
-        await this.axiosInstance.post(`/api/v2/mobile-devices/${deviceId}/lock`);
+        await this.axiosInstance.post(`/api/v2/mobile-devices/${pathSegment(deviceId)}/lock`);
       } else if (command === 'EraseDevice') {
-        await this.axiosInstance.post(`/api/v2/mobile-devices/${deviceId}/erase`);
+        await this.axiosInstance.post(`/api/v2/mobile-devices/${pathSegment(deviceId)}/erase`);
       } else if (command === 'ClearPasscode') {
-        await this.axiosInstance.post(`/api/v2/mobile-devices/${deviceId}/clear-passcode`);
+        await this.axiosInstance.post(`/api/v2/mobile-devices/${pathSegment(deviceId)}/clear-passcode`);
       } else {
         // Generic command endpoint
-        await this.axiosInstance.post(`/api/v2/mobile-devices/${deviceId}/commands`, {
+        await this.axiosInstance.post(`/api/v2/mobile-devices/${pathSegment(deviceId)}/commands`, {
           commandType: command,
         });
       }
@@ -2144,7 +2148,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       
       // Try Classic API
       try {
-        await this.axiosInstance.post(`/JSSResource/mobiledevicecommands/command/${command}`, {
+        await this.axiosInstance.post(`/JSSResource/mobiledevicecommands/command/${pathSegment(command)}`, {
           mobile_device_id: deviceId,
         });
         logger.info(`Successfully sent MDM command '${command}' to device ${deviceId} via Classic API`);
@@ -2313,7 +2317,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       const xmlPayload = this.buildScriptXml(scriptData);
       
       await this.axiosInstance.put(
-        `/JSSResource/scripts/id/${scriptId}`,
+        `/JSSResource/scripts/id/${pathSegment(scriptId)}`,
         xmlPayload,
         {
           headers: {
@@ -2347,7 +2351,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Deleting script ${scriptId} using Classic API...`);
-      await this.axiosInstance.delete(`/JSSResource/scripts/id/${scriptId}`);
+      await this.axiosInstance.delete(`/JSSResource/scripts/id/${pathSegment(scriptId)}`);
       logger.info(`Successfully deleted script ${scriptId}`);
     } catch (error) {
       if (isAxiosError(error)) {
@@ -2455,14 +2459,14 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       // Try Jamf Pro API first
       logger.info(`Getting mobile device group ${groupId} details using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/mobile-device-groups/${groupId}`);
+      const response = await this.axiosInstance.get(`/api/v1/mobile-device-groups/${pathSegment(groupId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
       
       // Fall back to Classic API
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/mobiledevicegroups/id/${groupId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/mobiledevicegroups/id/${pathSegment(groupId)}`);
         const group = response.data.mobile_device_group;
         
         // Transform Classic API response
@@ -2915,7 +2919,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
         logger.info(`Using compliance search ID: ${searchId}`);
         
         // Use this search to get computers - it should return ALL computers with check-in data
-        const response = await this.axiosInstance.get(`/JSSResource/advancedcomputersearches/id/${searchId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/advancedcomputersearches/id/${pathSegment(searchId)}`);
         const searchResults = response.data.advanced_computer_search?.computers || [];
         
         // For compliance, we need ALL computers, not just those that haven't checked in
@@ -3442,7 +3446,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       const response = await this.axiosInstance.get(
-        `/JSSResource/advancedcomputersearches/id/${searchId}`,
+        `/JSSResource/advancedcomputersearches/id/${pathSegment(searchId)}`,
         {
           headers: {
             'Accept': 'application/json',
@@ -3471,7 +3475,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     await this.ensureAuthenticated();
     
     try {
-      await this.axiosInstance.delete(`/JSSResource/advancedcomputersearches/id/${searchId}`);
+      await this.axiosInstance.delete(`/JSSResource/advancedcomputersearches/id/${pathSegment(searchId)}`);
       logger.info(`Successfully deleted advanced computer search ${searchId}`);
     } catch (error) {
       if (isAxiosError(error)) {
@@ -3598,10 +3602,10 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     await this.ensureAuthenticated();
 
     try {
-      const subsetPath = subset ? `/subset/${subset}` : '';
+      const subsetPath = subset ? `/subset/${pathSegment(subset)}` : '';
       logger.info(`Getting computer history for device ${deviceId}${subset ? ` (subset: ${subset})` : ''}...`);
       const response = await this.axiosInstance.get(
-        `/JSSResource/computerhistory/id/${deviceId}${subsetPath}`,
+        `/JSSResource/computerhistory/id/${pathSegment(deviceId)}${subsetPath}`,
       );
       return response.data.computer_history || response.data;
     } catch (error) {
@@ -3622,7 +3626,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting policy logs for device ${deviceId}...`);
       const response = await this.axiosInstance.get(
-        `/JSSResource/computerhistory/id/${deviceId}/subset/PolicyLogs`,
+        `/JSSResource/computerhistory/id/${pathSegment(deviceId)}/subset/PolicyLogs`,
       );
       return response.data.computer_history?.policy_logs || response.data;
     } catch (error) {
@@ -3643,7 +3647,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting MDM command history for device ${deviceId}...`);
       const response = await this.axiosInstance.get(
-        `/JSSResource/computerhistory/id/${deviceId}/subset/Commands`,
+        `/JSSResource/computerhistory/id/${pathSegment(deviceId)}/subset/Commands`,
       );
       return response.data.computer_history?.commands || response.data;
     } catch (error) {
@@ -3708,7 +3712,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       try {
         const xmlPayload = `<?xml version="1.0" encoding="UTF-8"?><computer_command><general><command>${escapeXml(command)}</command></general><computers><computer><id>${escapeXml(deviceId)}</id></computer></computers></computer_command>`;
         const response = await this.axiosInstance.post(
-          '/JSSResource/computercommands/command/' + command,
+          '/JSSResource/computercommands/command/' + pathSegment(command),
           xmlPayload,
           {
             headers: {
@@ -3753,7 +3757,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Flushing ${commandStatus} MDM commands for computer ${deviceId}...`);
       await this.axiosInstance.delete(
-        `/JSSResource/commandflush/computers/id/${deviceId}/status/${commandStatus}`,
+        `/JSSResource/commandflush/computers/id/${pathSegment(deviceId)}/status/${pathSegment(commandStatus)}`,
       );
       logger.info(`Successfully flushed ${commandStatus} MDM commands for computer ${deviceId}`);
     } catch (error) {
@@ -3803,13 +3807,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting building details for ${buildingId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/buildings/${buildingId}`);
+      const response = await this.axiosInstance.get(`/api/v1/buildings/${pathSegment(buildingId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/buildings/id/${buildingId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/buildings/id/${pathSegment(buildingId)}`);
         return response.data.building;
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -3859,13 +3863,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting department details for ${departmentId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/departments/${departmentId}`);
+      const response = await this.axiosInstance.get(`/api/v1/departments/${pathSegment(departmentId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/departments/id/${departmentId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/departments/id/${pathSegment(departmentId)}`);
         return response.data.department;
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -3915,13 +3919,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting category details for ${categoryId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/categories/${categoryId}`);
+      const response = await this.axiosInstance.get(`/api/v1/categories/${pathSegment(categoryId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/categories/id/${categoryId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/categories/id/${pathSegment(categoryId)}`);
         return response.data.category;
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -3950,7 +3954,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting LAPS password for ${username} on device ${clientManagementId}...`);
       const response = await this.axiosInstance.get(
-        `/api/v2/local-admin-password/${clientManagementId}/account/${username}/password`,
+        `/api/v2/local-admin-password/${pathSegment(clientManagementId)}/account/${pathSegment(username)}/password`,
       );
       return response.data;
     } catch (error) {
@@ -3971,7 +3975,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting LAPS audit for ${username} on device ${clientManagementId}...`);
       const response = await this.axiosInstance.get(
-        `/api/v2/local-admin-password/${clientManagementId}/account/${username}/audit`,
+        `/api/v2/local-admin-password/${pathSegment(clientManagementId)}/account/${pathSegment(username)}/audit`,
       );
       return response.data;
     } catch (error) {
@@ -3992,7 +3996,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting LAPS accounts for device ${clientManagementId}...`);
       const response = await this.axiosInstance.get(
-        `/api/v2/local-admin-password/${clientManagementId}/accounts`,
+        `/api/v2/local-admin-password/${pathSegment(clientManagementId)}/accounts`,
       );
       return response.data;
     } catch (error) {
@@ -4035,7 +4039,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting patch software title details for ${titleId}...`);
-      const response = await this.axiosInstance.get(`/api/v2/patch-software-title-configurations/${titleId}`);
+      const response = await this.axiosInstance.get(`/api/v2/patch-software-title-configurations/${pathSegment(titleId)}`);
       return response.data;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4077,7 +4081,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting patch policy dashboard for ${policyId}...`);
-      const response = await this.axiosInstance.get(`/api/v2/patch-policies/${policyId}/dashboard`);
+      const response = await this.axiosInstance.get(`/api/v2/patch-policies/${pathSegment(policyId)}/dashboard`);
       return response.data;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4126,13 +4130,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting extension attribute details for ${attributeId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/computer-extension-attributes/${attributeId}`);
+      const response = await this.axiosInstance.get(`/api/v1/computer-extension-attributes/${pathSegment(attributeId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/computerextensionattributes/id/${attributeId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/computerextensionattributes/id/${pathSegment(attributeId)}`);
         return response.data.computer_extension_attribute;
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -4199,7 +4203,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Updating extension attribute ${attributeId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.put(`/api/v1/computer-extension-attributes/${attributeId}`, data);
+      const response = await this.axiosInstance.put(`/api/v1/computer-extension-attributes/${pathSegment(attributeId)}`, data);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
@@ -4207,7 +4211,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       try {
         const xmlPayload = `<?xml version="1.0" encoding="UTF-8"?><computer_extension_attribute>${data.name ? `<name>${escapeXml(data.name)}</name>` : ''}${data.description !== undefined ? `<description>${escapeXml(data.description)}</description>` : ''}${data.dataType ? `<data_type>${escapeXml(data.dataType)}</data_type>` : ''}${data.scriptContents ? `<input_type><type>script</type><script>${escapeXml(data.scriptContents)}</script></input_type>` : ''}</computer_extension_attribute>`;
         const response = await this.axiosInstance.put(
-          `/JSSResource/computerextensionattributes/id/${attributeId}`,
+          `/JSSResource/computerextensionattributes/id/${pathSegment(attributeId)}`,
           xmlPayload,
           {
             headers: {
@@ -4241,13 +4245,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Deleting extension attribute ${attributeId} using Jamf Pro API...`);
-      await this.axiosInstance.delete(`/api/v1/computer-extension-attributes/${attributeId}`);
+      await this.axiosInstance.delete(`/api/v1/computer-extension-attributes/${pathSegment(attributeId)}`);
       logger.info(`Successfully deleted extension attribute ${attributeId}`);
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        await this.axiosInstance.delete(`/JSSResource/computerextensionattributes/id/${attributeId}`);
+        await this.axiosInstance.delete(`/JSSResource/computerextensionattributes/id/${pathSegment(attributeId)}`);
         logger.info(`Successfully deleted extension attribute ${attributeId} via Classic API`);
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -4323,7 +4327,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting software update plan details for ${planId}...`);
-      const response = await this.axiosInstance.get(`/api/v1/managed-software-updates/plans/${planId}`);
+      const response = await this.axiosInstance.get(`/api/v1/managed-software-updates/plans/${pathSegment(planId)}`);
       return response.data;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4372,10 +4376,10 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting computer prestage details for ${prestageId}...`);
       try {
-        const response = await this.axiosInstance.get(`/api/v3/computer-prestages/${prestageId}`);
+        const response = await this.axiosInstance.get(`/api/v3/computer-prestages/${pathSegment(prestageId)}`);
         return response.data;
       } catch {
-        const response = await this.axiosInstance.get(`/api/v2/computer-prestages/${prestageId}`);
+        const response = await this.axiosInstance.get(`/api/v2/computer-prestages/${pathSegment(prestageId)}`);
         return response.data;
       }
     } catch (error) {
@@ -4396,10 +4400,10 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info(`Getting computer prestage scope for ${prestageId}...`);
       try {
-        const response = await this.axiosInstance.get(`/api/v3/computer-prestages/${prestageId}/scope`);
+        const response = await this.axiosInstance.get(`/api/v3/computer-prestages/${pathSegment(prestageId)}/scope`);
         return response.data;
       } catch {
-        const response = await this.axiosInstance.get(`/api/v2/computer-prestages/${prestageId}/scope`);
+        const response = await this.axiosInstance.get(`/api/v2/computer-prestages/${pathSegment(prestageId)}/scope`);
         return response.data;
       }
     } catch (error) {
@@ -4449,13 +4453,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting network segment details for ${segmentId} using Jamf Pro API...`);
-      const response = await this.axiosInstance.get(`/api/v1/network-segments/${segmentId}`);
+      const response = await this.axiosInstance.get(`/api/v1/network-segments/${pathSegment(segmentId)}`);
       return response.data;
     } catch (_error) {
       logger.debug('Jamf Pro API failed, trying Classic API...');
 
       try {
-        const response = await this.axiosInstance.get(`/JSSResource/networksegments/id/${segmentId}`);
+        const response = await this.axiosInstance.get(`/JSSResource/networksegments/id/${pathSegment(segmentId)}`);
         return response.data.network_segment;
       } catch (classicError) {
         if (isAxiosError(classicError)) {
@@ -4498,7 +4502,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting mobile device prestage details for ${prestageId}...`);
-      const response = await this.axiosInstance.get(`/api/v2/mobile-device-prestages/${prestageId}`);
+      const response = await this.axiosInstance.get(`/api/v2/mobile-device-prestages/${pathSegment(prestageId)}`);
       return response.data;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4540,7 +4544,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting account details for ${accountId}...`);
-      const response = await this.axiosInstance.get(`/JSSResource/accounts/userid/${accountId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/accounts/userid/${pathSegment(accountId)}`);
       return response.data.account;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4559,7 +4563,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting account group details for ${groupId}...`);
-      const response = await this.axiosInstance.get(`/JSSResource/accounts/groupid/${groupId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/accounts/groupid/${pathSegment(groupId)}`);
       return response.data.group;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4601,7 +4605,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting user details for ${userId}...`);
-      const response = await this.axiosInstance.get(`/JSSResource/users/id/${userId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/users/id/${pathSegment(userId)}`);
       return response.data.user;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4670,7 +4674,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting app installer details for ${titleId}...`);
-      const response = await this.axiosInstance.get(`/api/v1/app-installers/titles/${titleId}`);
+      const response = await this.axiosInstance.get(`/api/v1/app-installers/titles/${pathSegment(titleId)}`);
       return response.data;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4712,7 +4716,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting restricted software details for ${softwareId}...`);
-      const response = await this.axiosInstance.get(`/JSSResource/restrictedsoftware/id/${softwareId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/restrictedsoftware/id/${pathSegment(softwareId)}`);
       return response.data.restricted_software;
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4815,7 +4819,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       const xmlPayload = this.buildRestrictedSoftwareXml(data);
 
       await this.axiosInstance.put(
-        `/JSSResource/restrictedsoftware/id/${softwareId}`,
+        `/JSSResource/restrictedsoftware/id/${pathSegment(softwareId)}`,
         xmlPayload,
         {
           headers: {
@@ -4847,7 +4851,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Deleting restricted software ${softwareId} using Classic API...`);
-      await this.axiosInstance.delete(`/JSSResource/restrictedsoftware/id/${softwareId}`);
+      await this.axiosInstance.delete(`/JSSResource/restrictedsoftware/id/${pathSegment(softwareId)}`);
       logger.info(`Successfully deleted restricted software ${softwareId}`);
     } catch (error) {
       if (isAxiosError(error)) {
@@ -4889,7 +4893,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
     try {
       logger.info(`Getting webhook details for ${webhookId}...`);
-      const response = await this.axiosInstance.get(`/JSSResource/webhooks/id/${webhookId}`);
+      const response = await this.axiosInstance.get(`/JSSResource/webhooks/id/${pathSegment(webhookId)}`);
       return response.data.webhook;
     } catch (error) {
       if (isAxiosError(error)) {
