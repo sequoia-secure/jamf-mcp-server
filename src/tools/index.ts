@@ -463,19 +463,29 @@ const GetCategoryDetailsSchema = z.object({
 });
 
 // LAPS Schemas
+// These ids are interpolated into /api/v2/local-admin-password/... paths, so
+// they are held to Jamf's formats (UUID or hex management id, macOS short
+// account name) rather than any string.
+const ClientManagementId = z.string()
+  .regex(/^[0-9A-Fa-f-]{1,64}$/, 'clientManagementId must be a UUID or hex management ID')
+  .describe('The client management ID (UDID) of the device');
+const LapsUsername = z.string()
+  .regex(/^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$/, 'username must be a local account short name')
+  .describe('The local admin account username');
+
 const GetLocalAdminPasswordSchema = z.object({
-  clientManagementId: z.string().describe('The client management ID (UDID) of the device'),
-  username: z.string().describe('The local admin account username'),
+  clientManagementId: ClientManagementId,
+  username: LapsUsername,
   confirm: z.boolean().optional().default(false).describe('Confirmation flag required to retrieve the password'),
 });
 
 const GetLocalAdminPasswordAuditSchema = z.object({
-  clientManagementId: z.string().describe('The client management ID (UDID) of the device'),
-  username: z.string().describe('The local admin account username'),
+  clientManagementId: ClientManagementId,
+  username: LapsUsername,
 });
 
 const GetLocalAdminPasswordAccountsSchema = z.object({
-  clientManagementId: z.string().describe('The client management ID (UDID) of the device'),
+  clientManagementId: ClientManagementId,
 });
 
 // Patch Management Schemas
@@ -664,6 +674,21 @@ export function redactLapsPasswords(value: unknown): unknown {
       [key, key.toLowerCase() === 'password' ? '[REDACTED]' : redactLapsPasswords(inner)]),
   );
 }
+
+/**
+ * Text-level counterpart of redactLapsPasswords for tool output that has
+ * already been serialized. Applied to every tool result except
+ * getLocalAdminPassword (the one confirmed, audited way to read a LAPS
+ * credential), so a read tool can never hand back a `password` value even if
+ * Jamf returns one from an endpoint we did not expect it from.
+ */
+const PASSWORD_VALUE = /("password"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|[^,}\]\s]+)/gi;
+
+export function redactPasswordText(text: string): string {
+  return text.replace(PASSWORD_VALUE, '$1"[REDACTED]"');
+}
+
+const PASSWORD_DISCLOSING_TOOLS = new Set(['getLocalAdminPassword']);
 
 export function registerTools(server: Server, jamfClient: IJamfApiClient): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -4815,7 +4840,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
 
           const content: TextContent = {
             type: 'text',
-            text: JSON.stringify(accounts, null, 2),
+            text: JSON.stringify(redactLapsPasswords(accounts), null, 2),
           };
 
           return { content: [content] };
@@ -5426,10 +5451,14 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       }
       })();
 
-      // Apply response size guard to prevent "Tool result is too large" errors
+      // Apply response size guard to prevent "Tool result is too large" errors.
+      // Redact first so truncation can't leave a partial password behind.
       if (toolResult?.content) {
         for (const item of toolResult.content) {
           if (item.type === 'text' && typeof item.text === 'string') {
+            if (!PASSWORD_DISCLOSING_TOOLS.has(name)) {
+              item.text = redactPasswordText(item.text);
+            }
             item.text = truncateToolResponse(item.text);
           }
         }
@@ -5440,7 +5469,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       const content: TextContent = {
         type: 'text',
-        text: `Error: ${errorMessage}`,
+        text: `Error: ${redactPasswordText(errorMessage)}`,
       };
       return { content: [content], isError: true };
     }
