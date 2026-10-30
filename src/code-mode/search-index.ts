@@ -128,7 +128,7 @@ const CATALOG: SearchIndexEntry[] = [
 
   // ── Software Update Plans ────────────────────────────────────────
   { name: 'listSoftwareUpdatePlans',      signature: '() => Promise<any[]>',                                                                                                description: 'List all software update plans',                  category: 'software_updates', capabilities: ['read:software_updates'],    readOnly: true },
-  { name: 'createSoftwareUpdatePlan',     signature: '(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string) => Promise<any>',            description: 'Create a software update plan for devices',       category: 'software_updates', capabilities: ['command:software_updates'], readOnly: false },
+  { name: 'createSoftwareUpdatePlan',     signature: '(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string) => Promise<any>',            description: 'Create a macOS update plan for computer inventory IDs (objectType COMPUTER)', category: 'software_updates', capabilities: ['command:software_updates'], readOnly: false },
   { name: 'getSoftwareUpdatePlanDetails', signature: '(planId: string) => Promise<any>',                                                                                     description: 'Get details and status of a software update plan', category: 'software_updates', capabilities: ['read:software_updates'],   readOnly: true },
 
   // ── Prestages ────────────────────────────────────────────────────

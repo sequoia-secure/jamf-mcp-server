@@ -1,5 +1,19 @@
 import { AxiosError } from 'axios';
 
+/** Keep useful Jamf validation codes/paths without echoing response values or credentials. */
+function validationDetails(data: unknown): string {
+  if (!data || typeof data !== 'object' || !('errors' in data) || !Array.isArray(data.errors)) return '';
+  const details = data.errors.slice(0, 5).flatMap((entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const item = entry as Record<string, unknown>;
+    const code = typeof item.code === 'string' && /^[A-Z][A-Z0-9_.-]{0,99}$/.test(item.code) ? item.code : '';
+    const field = typeof item.field === 'string' && /^[A-Za-z][A-Za-z0-9_.[\]-]{0,159}$/.test(item.field)
+      ? item.field : '';
+    return code || field ? [`${code || 'INVALID_FIELD'}${field ? ` at ${field}` : ''}`] : [];
+  });
+  return details.length ? ` (Jamf validation: ${details.join('; ')})` : '';
+}
+
 /**
  * Base error class for all Jamf API errors
  */
@@ -46,7 +60,7 @@ export class JamfAPIError extends Error {
     // Handle common HTTP status codes with helpful suggestions
     switch (statusCode) {
       case 400:
-        message = `Bad Request: ${errorData?.message || errorData?.error || error.message}`;
+        message = `Bad Request: ${errorData?.message || errorData?.error || error.message}${validationDetails(errorData)}`;
         suggestions = [
           'Check the request parameters and data format',
           'Ensure all required fields are provided',

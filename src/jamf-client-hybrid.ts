@@ -4295,7 +4295,9 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     try {
       logger.info('Creating managed software update plan...');
       const payload: any = {
-        devices: deviceIds.map(id => ({ deviceId: id })),
+        // Jamf requires a device namespace on every entry. These are computer
+        // inventory IDs; omitting objectType makes an otherwise valid plan 400.
+        devices: deviceIds.map(id => ({ deviceId: id, objectType: 'COMPUTER' })),
         config: {
           updateAction,
           versionType,

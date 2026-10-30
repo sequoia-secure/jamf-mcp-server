@@ -259,7 +259,7 @@ These combine multiple API calls into a single operation:
 
 ### Managed Software Updates
 - **listSoftwareUpdatePlans**: List active and completed OS update plans
-- **createSoftwareUpdatePlan**: Create an OS update plan for specific devices (requires confirmation)
+- **createSoftwareUpdatePlan**: Create a macOS update plan for computer inventory IDs (requires confirmation). Each Jamf API device entry includes the required `objectType: "COMPUTER"`; mobile-device IDs are not interchangeable with computer IDs. HTTP 400 errors retain bounded Jamf validation codes and field paths without returning raw response descriptions, request bodies, or headers.
 - **getSoftwareUpdatePlanDetails**: Update plan status and device progress
 
 ### PreStage Enrollments
