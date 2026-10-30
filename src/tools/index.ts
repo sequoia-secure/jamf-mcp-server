@@ -523,7 +523,7 @@ const UpdateComputerExtensionAttributeSchema = z.object({
 const ListSoftwareUpdatePlansSchema = z.object({});
 
 const CreateSoftwareUpdatePlanSchema = z.object({
-  deviceIds: z.array(z.string()).describe('Array of device IDs to target for the update'),
+  deviceIds: z.array(z.string()).describe('Array of computer inventory IDs to target for the update'),
   updateAction: z.string().describe('Update action: DOWNLOAD_AND_INSTALL, DOWNLOAD_ONLY, or INSTALL_IMMEDIATELY'),
   versionType: z.string().describe('Version type: LATEST_MAJOR, LATEST_MINOR, or SPECIFIC_VERSION'),
   specificVersion: z.string().optional().describe('Specific OS version when versionType is SPECIFIC_VERSION'),
@@ -2567,14 +2567,14 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
       },
       {
         name: 'createSoftwareUpdatePlan',
-        description: 'Create a managed software update plan to deploy OS updates to specific devices (requires confirmation)',
+        description: 'Create a managed software update plan to deploy macOS updates to specific computers (requires confirmation)',
         inputSchema: {
           type: 'object',
           properties: {
             deviceIds: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Array of device IDs to target for the update',
+              description: 'Array of computer inventory IDs to target for the update; sent with objectType COMPUTER',
             },
             updateAction: {
               type: 'string',
