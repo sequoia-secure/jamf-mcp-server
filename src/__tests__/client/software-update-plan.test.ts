@@ -48,6 +48,30 @@ describe('managed software update plan request through MCP', () => {
     });
   });
 
+  test('passes a deadline through as config.forceInstallLocalDateTime', async () => {
+    const post = jest.fn(async () => ({ data: { id: 'synthetic-plan' } }));
+    const result = await setup(post).call({ ...args, updateAction: 'DOWNLOAD_INSTALL_SCHEDULE',
+      deadline: '2026-12-01T17:00:00' });
+    expect(result.isError).not.toBe(true);
+    expect(post).toHaveBeenCalledWith('/api/v1/managed-software-updates/plans', {
+      devices: [{ deviceId: '7', objectType: 'COMPUTER' }, { deviceId: '42', objectType: 'COMPUTER' }],
+      config: { updateAction: 'DOWNLOAD_INSTALL_SCHEDULE', versionType: 'SPECIFIC_VERSION', specificVersion: '15.7',
+        forceInstallLocalDateTime: '2026-12-01T17:00:00' },
+    });
+  });
+
+  test.each([
+    '2026-12-01T17:00:00Z', '2026-12-01T17:00:00-08:00', '2026-12-01 17:00:00', '2026-12-01',
+    '2026-02-30T12:00:00', '2026-12-01T24:00:00', 'tomorrow',
+  ])('rejects malformed deadline %s before calling Jamf', async deadline => {
+    const post = jest.fn();
+    const { call, auth } = setup(post);
+    const result = await call({ ...args, deadline });
+    expect(result.isError).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
+  });
+
   test.each([undefined, false])('retains the confirmation gate for confirm=%s', async confirm => {
     const post = jest.fn();
     const { call, auth } = setup(post);

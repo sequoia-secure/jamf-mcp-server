@@ -211,7 +211,7 @@ export interface IJamfApiClient {
 
   // Software Update Plans
   listSoftwareUpdatePlans(): Promise<any[]>;
-  createSoftwareUpdatePlan(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string): Promise<any>;
+  createSoftwareUpdatePlan(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string, deadline?: string): Promise<any>;
   getSoftwareUpdatePlanDetails(planId: string): Promise<any>;
 
   // Prestages

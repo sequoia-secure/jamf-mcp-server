@@ -537,6 +537,18 @@ const CreateSoftwareUpdatePlanSchema = z.object({
   updateAction: z.string().describe('Update action: DOWNLOAD_AND_INSTALL, DOWNLOAD_ONLY, or INSTALL_IMMEDIATELY'),
   versionType: z.string().describe('Version type: LATEST_MAJOR, LATEST_MINOR, or SPECIFIC_VERSION'),
   specificVersion: z.string().optional().describe('Specific OS version when versionType is SPECIFIC_VERSION'),
+  deadline: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/, 'deadline must be device-local time as YYYY-MM-DDTHH:MM:SS, with no offset')
+    .refine(v => {
+      const [d, t] = v.split('T');
+      const [y, mo, da] = d.split('-').map(Number);
+      const [h, mi, se] = t.split(':').map(Number);
+      const dt = new Date(Date.UTC(y, mo - 1, da, h, mi, se));
+      return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === da
+        && dt.getUTCHours() === h && dt.getUTCMinutes() === mi && dt.getUTCSeconds() === se;
+    }, 'deadline is not a real calendar date and time')
+    .optional()
+    .describe('DDM enforcement deadline, device-local time YYYY-MM-DDTHH:MM:SS; sent as config.forceInstallLocalDateTime'),
   confirm: z.boolean().optional().default(false).describe('Confirmation flag required to create the update plan'),
 });
 
@@ -2612,6 +2624,10 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
             specificVersion: {
               type: 'string',
               description: 'Specific OS version when versionType is SPECIFIC_VERSION',
+            },
+            deadline: {
+              type: 'string',
+              description: 'Declarative Device Management enforcement deadline (required for macOS 27 targets): the device-local date and time by which the update is forced, as YYYY-MM-DDTHH:MM:SS with no timezone offset. Sent to Jamf as config.forceInstallLocalDateTime',
             },
             confirm: {
               type: 'boolean',
@@ -5037,7 +5053,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
         }
 
         case 'createSoftwareUpdatePlan': {
-          const { deviceIds, updateAction, versionType, specificVersion, confirm } = CreateSoftwareUpdatePlanSchema.parse(args);
+          const { deviceIds, updateAction, versionType, specificVersion, deadline, confirm } = CreateSoftwareUpdatePlanSchema.parse(args);
 
           if (!confirm) {
             const content: TextContent = {
@@ -5047,7 +5063,7 @@ export function registerTools(server: Server, jamfClient: IJamfApiClient): void 
             return { content: [content] };
           }
 
-          const result = await jamfClient.createSoftwareUpdatePlan(deviceIds, updateAction, versionType, specificVersion);
+          const result = await jamfClient.createSoftwareUpdatePlan(deviceIds, updateAction, versionType, specificVersion, deadline);
 
           const content: TextContent = {
             type: 'text',
