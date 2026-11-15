@@ -4289,7 +4289,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
   /**
    * Create a managed software update plan
    */
-  async createSoftwareUpdatePlan(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string): Promise<any> {
+  async createSoftwareUpdatePlan(deviceIds: string[], updateAction: string, versionType: string, specificVersion?: string, deadline?: string): Promise<any> {
     if (this.readOnlyMode) {
       throw new Error('Cannot create software update plans in read-only mode');
     }
@@ -4309,6 +4309,13 @@ export class JamfApiClientHybrid implements IJamfApiClient {
       };
       if (specificVersion) {
         payload.config.specificVersion = specificVersion;
+      }
+      if (deadline) {
+        // Declarative Device Management enforcement deadline (macOS 14+, and
+        // the only path on macOS 27, which no longer accepts the MDM
+        // ScheduleOSUpdate command). Jamf reads it as the device's local
+        // wall-clock time, so it carries no offset.
+        payload.config.forceInstallLocalDateTime = deadline;
       }
       const response = await this.axiosInstance.post('/api/v1/managed-software-updates/plans', payload);
       return response.data;
