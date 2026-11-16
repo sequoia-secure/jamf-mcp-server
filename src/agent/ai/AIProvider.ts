@@ -10,7 +10,7 @@ export const AIRequestSchema = z.object({
   tools: z.array(z.object({
     name: z.string(),
     description: z.string(),
-    parameters: z.record(z.any()),
+    parameters: z.record(z.string(), z.any()),
   })).optional(),
 });
 
@@ -19,7 +19,7 @@ export const AIResponseSchema = z.object({
   toolCalls: z.array(z.object({
     id: z.string(),
     name: z.string(),
-    arguments: z.record(z.any()),
+    arguments: z.record(z.string(), z.any()),
   })).optional(),
   usage: z.object({
     promptTokens: z.number(),

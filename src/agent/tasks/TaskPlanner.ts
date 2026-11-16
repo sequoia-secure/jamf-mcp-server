@@ -7,7 +7,7 @@ export const TaskStepSchema = z.object({
   id: z.string(),
   description: z.string(),
   toolName: z.string(),
-  arguments: z.record(z.any()),
+  arguments: z.record(z.string(), z.any()),
   dependencies: z.array(z.string()).optional(),
   optional: z.boolean().optional(),
 });
