@@ -702,6 +702,11 @@ export class JamfApiClientHybrid implements IJamfApiClient {
   async executePolicy(policyId: string, deviceIds: string[]): Promise<void> {
     this.invalidateCache('listPolicies');
     this.invalidateCache('policyDetails');
+    // A bare string would be iterated per character, running the policy on the
+    // wrong computers ("12" -> 1 and 2).
+    if (!Array.isArray(deviceIds)) {
+      throw new Error('deviceIds must be an array of computer ids');
+    }
     for (const id of deviceIds) {
       this.invalidateCache(`computerDetails:${id}`);
     }

@@ -120,7 +120,7 @@ export async function executePolicy(client: JamfApiClientHybrid, params: any) {
   const results = [];
   for (const deviceId of deviceIds) {
     try {
-      await client.executePolicy(policyId, deviceId);
+      await client.executePolicy(policyId, [deviceId]);
       results.push({ deviceId, status: 'success' });
     } catch (error: any) {
       results.push({ deviceId, status: 'failed', error: error.message });
