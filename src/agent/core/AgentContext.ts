@@ -11,7 +11,7 @@ export const ConversationMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
   timestamp: z.string(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const TaskHistoryItemSchema = z.object({

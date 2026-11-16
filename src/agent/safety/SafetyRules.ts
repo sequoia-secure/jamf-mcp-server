@@ -6,7 +6,7 @@ export const SafetyRuleSchema = z.object({
   id: z.string(),
   description: z.string(),
   toolPattern: z.string().optional(),
-  argumentPattern: z.record(z.any()).optional(),
+  argumentPattern: z.record(z.string(), z.any()).optional(),
   condition: z.function().optional(),
   action: z.enum(['allow', 'deny', 'confirm']),
   priority: z.number().default(0),

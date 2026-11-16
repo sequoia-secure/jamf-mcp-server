@@ -56,12 +56,12 @@ export const validateOAuthAuthorize = (req: Request, res: Response, next: NextFu
   } catch (error) {
     if (error instanceof ZodError) {
       logger.warn('Invalid OAuth authorize parameters', {
-        errors: error.errors,
+        errors: error.issues,
         ip: req.ip,
       });
       res.status(400).json({
         error: 'Invalid request parameters',
-        details: error.errors.map(e => ({
+        details: error.issues.map(e => ({
           field: e.path.join('.'),
           message: e.message,
         })),
@@ -81,12 +81,12 @@ export const validateOAuthCallback = (req: Request, res: Response, next: NextFun
   } catch (error) {
     if (error instanceof ZodError) {
       logger.warn('Invalid OAuth callback parameters', {
-        errors: error.errors,
+        errors: error.issues,
         ip: req.ip,
       });
       res.status(400).json({
         error: 'Invalid callback parameters',
-        details: error.errors.map(e => ({
+        details: error.issues.map(e => ({
           field: e.path.join('.'),
           message: e.message,
         })),
@@ -110,12 +110,12 @@ export const validateTokenRefresh = (req: Request, res: Response, next: NextFunc
   } catch (error) {
     if (error instanceof ZodError) {
       logger.warn('Invalid token refresh request', {
-        errors: error.errors,
+        errors: error.issues,
         ip: req.ip,
       });
       res.status(400).json({
         error: 'Invalid request body',
-        details: error.errors.map(e => ({
+        details: error.issues.map(e => ({
           field: e.path.join('.'),
           message: e.message,
         })),
