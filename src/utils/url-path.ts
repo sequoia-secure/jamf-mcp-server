@@ -20,6 +20,21 @@ export function pathSegment(value: string | number): string {
 }
 
 /**
+ * Require Jamf numeric object ids (Classic `/id/{id}` and Pro `/{id}` routes).
+ *
+ * Write methods call this before any request so a crafted id such as
+ * `1/erase#` or `../../computers/id/1` is refused outright, rather than
+ * relying on encoding alone to keep a DELETE or POST on its intended route.
+ */
+export function assertJamfIds(...ids: Array<string | number>): void {
+  for (const id of ids) {
+    if (!/^[0-9]{1,19}$/.test(String(id))) {
+      throw new Error('Invalid Jamf object id: expected a numeric id');
+    }
+  }
+}
+
+/**
  * Reject a request URL whose path could have been re-routed by its inputs.
  * Query strings go through axios `params`, never inline, so `?` and `#` are
  * never legitimate here; neither are backslashes or dot segments (raw or
