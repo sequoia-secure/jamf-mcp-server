@@ -99,6 +99,41 @@ describe('JamfApiClientHybrid request paths', () => {
   });
 });
 
+// A crafted id on an endpoint.write tool could reroute a body-less POST or a
+// DELETE: `1/erase#` turned an inventory update into a device wipe, and
+// `../../computers/id/1` turned deletePolicy into a computer-record delete.
+describe('write methods refuse non-numeric ids before any request', () => {
+  test.each([
+    ['updateMobileDeviceInventory', ['1/erase#']],
+    ['sendMDMCommand', ['1/erase#', 'UpdateInventory']],
+    ['deletePolicy', ['../../computers/id/1']],
+    ['flushMDMCommands', ['../../../computers/id/1?', 'Pending']],
+    ['executePolicy', ['1', ['2/../../../computers/id/3#']]],
+    ['updateInventory', ['1?x']],
+    ['deployScript', ['../1', ['2']]],
+    ['deleteScript', ['%2e%2e']],
+    ['deleteComputerGroup', ['1#']],
+    ['deleteConfigurationProfile', ['../1']],
+    ['deleteComputerExtensionAttribute', ['1/']],
+    ['deleteRestrictedSoftware', ['']],
+    ['deleteAdvancedComputerSearch', ['1 ']],
+  ] as const)('%s(%j)', async (method, args) => {
+    const { client, urls } = recordingClient();
+    await expect((client as any)[method](...args)).rejects.toThrow('Invalid Jamf object id');
+    expect(urls).toHaveLength(0);
+  });
+
+  test('numeric ids still reach the intended route', async () => {
+    const { client, urls } = recordingClient();
+    await client.updateMobileDeviceInventory('17');
+    await client.deletePolicy('42');
+    expect(urls).toEqual([
+      '/api/v2/mobile-devices/17/update-inventory',
+      '/JSSResource/policies/id/42',
+    ]);
+  });
+});
+
 type CallHandler = (req: { params: { name: string; arguments: unknown } }) => Promise<any>;
 
 function toolsWith(client: Partial<IJamfApiClient>): CallHandler {

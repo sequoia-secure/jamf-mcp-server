@@ -10,7 +10,7 @@ import { xmlDocument, escapeXml } from './utils/xml-builder.js';
 import { retryWithBackoff, getRetryConfig } from './utils/retry.js';
 import { ConcurrencyLimiter } from './utils/throttle.js';
 import { IJamfApiClient } from './types/jamf-client.js';
-import { pathSegment, assertSafeRequestPath } from './utils/url-path.js';
+import { pathSegment, assertSafeRequestPath, assertJamfIds } from './utils/url-path.js';
 
 const logger = createLogger('jamf-client-hybrid');
 const agentPool = getDefaultAgentPool();
@@ -700,6 +700,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
   // Execute policy (if not in read-only mode)
   async executePolicy(policyId: string, deviceIds: string[]): Promise<void> {
+    assertJamfIds(policyId, ...deviceIds);
     this.invalidateCache('listPolicies');
     this.invalidateCache('policyDetails');
     for (const id of deviceIds) {
@@ -719,6 +720,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
   // Deploy script (if not in read-only mode)
   async deployScript(scriptId: string, deviceIds: string[]): Promise<void> {
+    assertJamfIds(scriptId);
     for (const id of deviceIds) {
       this.invalidateCache(`computerDetails:${id}`);
     }
@@ -738,6 +740,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
 
   // Update inventory (if not in read-only mode)
   async updateInventory(deviceId: string): Promise<void> {
+    assertJamfIds(deviceId);
     this.invalidateCache(`computerDetails:${deviceId}`);
     this.invalidateCache('searchComputers');
     if (this.readOnlyMode) {
@@ -897,6 +900,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Update an existing policy
    */
   async updatePolicy(policyId: string, policyData: any): Promise<any> {
+    assertJamfIds(policyId);
     this.invalidateCache('listPolicies');
     this.invalidateCache('policyDetails');
     if (this.readOnlyMode) {
@@ -949,6 +953,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Clone an existing policy
    */
   async clonePolicy(sourcePolicyId: string, newName: string): Promise<any> {
+    assertJamfIds(sourcePolicyId);
     if (this.readOnlyMode) {
       throw new Error('Cannot clone policies in read-only mode');
     }
@@ -984,6 +989,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Enable or disable a policy
    */
   async setPolicyEnabled(policyId: string, enabled: boolean): Promise<any> {
+    assertJamfIds(policyId);
     if (this.readOnlyMode) {
       throw new Error('Cannot enable/disable policies in read-only mode');
     }
@@ -1022,6 +1028,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     replaceComputers?: string[];
     replaceComputerGroups?: string[];
   }): Promise<any> {
+    assertJamfIds(policyId);
     if (this.readOnlyMode) {
       throw new Error('Cannot update policy scope in read-only mode');
     }
@@ -1091,6 +1098,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete a policy
    */
   async deletePolicy(policyId: string): Promise<void> {
+    assertJamfIds(policyId);
     this.invalidateCache('listPolicies');
     this.invalidateCache('policyDetails');
     if (this.readOnlyMode) {
@@ -1385,6 +1393,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Deploy configuration profile to devices
    */
   async deployConfigurationProfile(profileId: string, deviceIds: string[], type: 'computer' | 'mobiledevice' = 'computer'): Promise<void> {
+    assertJamfIds(profileId);
     if (type === 'computer') {
       for (const id of deviceIds) {
         this.invalidateCache(`computerDetails:${id}`);
@@ -1466,6 +1475,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Remove configuration profile from devices
    */
   async removeConfigurationProfile(profileId: string, deviceIds: string[], type: 'computer' | 'mobiledevice' = 'computer'): Promise<void> {
+    assertJamfIds(profileId);
     if (type === 'computer') {
       for (const id of deviceIds) {
         this.invalidateCache(`computerDetails:${id}`);
@@ -1549,6 +1559,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete a configuration profile
    */
   async deleteConfigurationProfile(profileId: string, type: 'computer' | 'mobiledevice' = 'computer'): Promise<void> {
+    assertJamfIds(profileId);
     if (this.readOnlyMode) {
       throw new Error('Cannot delete configuration profiles in read-only mode');
     }
@@ -1881,6 +1892,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Update static computer group membership
    */
   async updateStaticComputerGroup(groupId: string, computerIds: string[]): Promise<any> {
+    assertJamfIds(groupId);
     if (this.readOnlyMode) {
       throw new Error('Cannot update computer groups in read-only mode');
     }
@@ -1927,6 +1939,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete computer group
    */
   async deleteComputerGroup(groupId: string): Promise<void> {
+    assertJamfIds(groupId);
     if (this.readOnlyMode) {
       throw new Error('Cannot delete computer groups in read-only mode');
     }
@@ -2075,6 +2088,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Update mobile device inventory
    */
   async updateMobileDeviceInventory(deviceId: string): Promise<void> {
+    assertJamfIds(deviceId);
     if (this.readOnlyMode) {
       throw new Error('Cannot update mobile device inventory in read-only mode');
     }
@@ -2129,6 +2143,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Send MDM command to mobile device
    */
   async sendMDMCommand(deviceId: string, command: string): Promise<void> {
+    assertJamfIds(deviceId);
     if (this.readOnlyMode) {
       throw new Error('Cannot send MDM commands in read-only mode');
     }
@@ -2342,6 +2357,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     os_requirements?: string;
     script_contents_encoded?: boolean;
   }): Promise<any> {
+    assertJamfIds(scriptId);
     this.invalidateCache('listScripts');
     if (this.readOnlyMode) {
       throw new Error('Cannot update scripts in read-only mode');
@@ -2381,6 +2397,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete a script
    */
   async deleteScript(scriptId: string): Promise<void> {
+    assertJamfIds(scriptId);
     this.invalidateCache('listScripts');
     if (this.readOnlyMode) {
       throw new Error('Cannot delete scripts in read-only mode');
@@ -3507,6 +3524,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete an advanced computer search
    */
   async deleteAdvancedComputerSearch(searchId: string): Promise<void> {
+    assertJamfIds(searchId);
     if (this.readOnlyMode) {
       throw new Error('Cannot delete advanced computer searches in read-only mode');
     }
@@ -3780,6 +3798,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Flush (clear) pending or failed MDM commands for a computer
    */
   async flushMDMCommands(deviceId: string, commandStatus: string): Promise<void> {
+    assertJamfIds(deviceId);
     this.invalidateCache(`computerDetails:${deviceId}`);
     this.invalidateCache('searchComputers');
     if (this.readOnlyMode) {
@@ -4232,6 +4251,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Update an existing computer extension attribute
    */
   async updateComputerExtensionAttribute(attributeId: string, data: any): Promise<any> {
+    assertJamfIds(attributeId);
     this.invalidateCache('computerDetails');
     this.invalidateCache('searchComputers');
     if (this.readOnlyMode) {
@@ -4274,6 +4294,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete a computer extension attribute
    */
   async deleteComputerExtensionAttribute(attributeId: string): Promise<void> {
+    assertJamfIds(attributeId);
     this.invalidateCache('computerDetails');
     this.invalidateCache('searchComputers');
     if (this.readOnlyMode) {
@@ -4855,6 +4876,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
     deleteExecutable?: boolean;
     sendNotification?: boolean;
   }): Promise<any> {
+    assertJamfIds(softwareId);
     if (this.readOnlyMode) {
       throw new Error('Cannot update restricted software in read-only mode');
     }
@@ -4891,6 +4913,7 @@ export class JamfApiClientHybrid implements IJamfApiClient {
    * Delete a restricted software entry
    */
   async deleteRestrictedSoftware(softwareId: string): Promise<void> {
+    assertJamfIds(softwareId);
     if (this.readOnlyMode) {
       throw new Error('Cannot delete restricted software in read-only mode');
     }
